@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Notes App</title>
+
+    <style>
+        body {
+          background: #0f172a;
+          color: white;
+          font-family: Arial;
+        }
+
+        .container {
+          width: 600px;
+          margin: 30px auto;
+          background: #1e293b;
+          padding: 20px;
+          border-radius: 12px;
+        }
+
+        h1 {
+          text-align: center;
+          color: #38bdf8;
+        }
+
+        .nav {
+          display: flex;
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+
+        .nav button {
+          flex: 1;
+          padding: 10px;
+          border: none;
+          background: #334155;
+          color: white;
+          border-radius: 8px;
+          cursor: pointer;
+        }
+
+        .page { display: none; }
+        .active { display: block; }
+
+        input, textarea {
+          width: 100%;
+          margin-top: 10px;
+          padding: 10px;
+          border-radius: 8px;
+          background: #0f172a;
+          color: white;
+          border: 1px solid #334155;
+        }
+
+        textarea { height: 100px; }
+
+        button {
+          margin-top: 10px;
+          padding: 10px;
+          width: 100%;
+          border: none;
+          background: #38bdf8;
+          border-radius: 8px;
+          cursor: pointer;
+        }
+
+        .note {
+          background: #0f172a;
+          margin-top: 10px;
+          padding: 10px;
+          border-radius: 10px;
+          border: 1px solid #334155;
+        }
+
+        .note p {
+          white-space: pre-line;
+          line-height: 1.5;
+        }
+
+        img {
+          width: 100%;
+          margin-top: 10px;
+          border-radius: 10px;
+        }
+
+        .actions {
+          display: flex;
+          gap: 10px;
+          margin-top: 10px;
+        }
+
+        .edit { background: #facc15; color: black; }
+        .delete { background: #ef4444; }
+
+        .read-btn {
+          margin-top: 5px;
+          background: #6366f1;
+          font-size: 12px;
+        }
+
+        .modal {
+          display: none;
+          position: fixed;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.7);
+          justify-content: center;
+          align-items: center;
+        }
+
+        .modal-content {
+          background: #1e293b;
+          padding: 20px;
+          border-radius: 10px;
+          width: 400px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <h1>📝 Notes App</h1>
+
+    <!-- NAV -->
+    <div class="nav">
+        <button onclick="showPage('addPage')">➕ Add Note</button>
+        <button onclick="showPage('viewPage')">📄 View Notes</button>
+    </div>
+
+    <!-- ADD PAGE -->
+    <div id="addPage" class="page active">
+        <input id="title" placeholder="Title">
+        <textarea id="content" placeholder="Write your note..."></textarea>
+
+        <input type="file" id="image">
+        <img id="preview" style="display:none;">
+
+        <button onclick="addNote()">Save Note</button>
+    </div>
+
+    <!-- VIEW PAGE -->
+    <div id="viewPage" class="page">
+        <input id="search" placeholder="Search...">
+        <div id="notes"></div>
+    </div>
+</div>
+
+<!-- EDIT MODAL -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <h3>Edit Note</h3>
+
+        <input id="editTitle">
+        <textarea id="editContent"></textarea>
+
+        <input type="file" id="editImage">
+        <img id="editPreview">
+
+        <button onclick="saveEdit()">Save</button>
+        <button onclick="closeModal()">Cancel</button>
+    </div>
+</div>
+
+<script>
+
+    let currentEditId = null;
+    let currentImage = "";
+
+    // Switch pages
+    function showPage(pageId) {
+      document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+      document.getElementById(pageId).classList.add("active");
+
+      if (pageId === "viewPage") loadNotes();
+    }
+
+    // Image preview
+    document.getElementById("image").addEventListener("change", async function() {
+      const file = this.files[0];
+      if (!file) return;
+
+      const base64 = await getBase64(file);
+      document.getElementById("preview").src = base64;
+      document.getElementById("preview").style.display = "block";
+    });
+
+    function getBase64(file) {
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+      });
+    }
+
+    // Add note
+    async function addNote() {
+      const title = document.getElementById("title").value;
+      const content = document.getElementById("content").value;
+      const file = document.getElementById("image").files[0];
+
+      let image = "";
+      if (file) image = await getBase64(file);
+
+      await fetch("/notes", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ title, content, image })
+      });
+
+      alert("Saved!");
+    }
+
+    // Load notes
+    async function loadNotes() {
+      const res = await fetch("/notes");
+      const data = await res.json();
+      displayNotes(data);
+    }
+
+    // Display notes with READ MORE
+    function displayNotes(notes) {
+      const div = document.getElementById("notes");
+      div.innerHTML = "";
+
+      notes.forEach(n => {
+
+        const shortText = n.content.length > 150
+          ? n.content.substring(0, 150) + "..."
+          : n.content;
+
+        div.innerHTML += `
+          <div class="note">
+            <h3>${n.title}</h3>
+
+            <p id="content-${n.id}">${shortText}</p>
+
+            ${
+              n.content.length > 150
+              ? `<button class="read-btn" onclick="toggleRead(${n.id}, \`${n.content}\`, \`${shortText}\`)">Read More</button>`
+              : ""
+            }
+
+            ${n.image ? `<img src="${n.image}">` : ""}
+
+            <div class="actions">
+              <button class="edit" onclick="editNote(${n.id}, \`${n.title}\`, \`${n.content}\`, \`${n.image || ""}\`)">Edit</button>
+              <button class="delete" onclick="deleteNote(${n.id})">Delete</button>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // Toggle read more
+    function toggleRead(id, fullText, shortText) {
+      const p = document.getElementById(`content-${id}`);
+      const btn = p.nextElementSibling;
+
+      if (btn.innerText === "Read More") {
+        p.innerText = fullText;
+        btn.innerText = "Show Less";
+      } else {
+        p.innerText = shortText;
+        btn.innerText = "Read More";
+      }
+    }
+
+    // Delete
+    async function deleteNote(id) {
+      await fetch(`/notes/${id}`, { method: "DELETE" });
+      loadNotes();
+    }
+
+    // Edit open
+    function editNote(id, title, content, image) {
+      currentEditId = id;
+      currentImage = image;
+
+      document.getElementById("editTitle").value = title;
+      document.getElementById("editContent").value = content;
+      document.getElementById("editPreview").src = image;
+
+      document.getElementById("editModal").style.display = "flex";
+    }
+
+    // Edit image
+    document.getElementById("editImage").addEventListener("change", async function() {
+      const file = this.files[0];
+      if (!file) return;
+
+      currentImage = await getBase64(file);
+      document.getElementById("editPreview").src = currentImage;
+    });
+
+    // Save edit
+    async function saveEdit() {
+      const title = document.getElementById("editTitle").value;
+      const content = document.getElementById("editContent").value;
+
+      await fetch(`/notes/${currentEditId}`, {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ title, content, image: currentImage })
+      });
+
+      closeModal();
+      loadNotes();
+    }
+
+    // Close modal
+    function closeModal() {
+      document.getElementById("editModal").style.display = "none";
+    }
+
+    // Search
+    document.getElementById("search").addEventListener("input", async (e) => {
+      const q = e.target.value;
+
+      if (q === "") return loadNotes();
+
+      const res = await fetch(`/notes/search?query=${q}`);
+      const data = await res.json();
+
+      displayNotes(data);
+    });
+
+</script>
+
+</body>
+</html>
